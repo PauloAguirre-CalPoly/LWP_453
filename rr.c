@@ -13,25 +13,19 @@ context *last = NULL;
 int rdyP = 0;
 int start = 0;
 
-//struct scheduler rr_publish = {NULL, NULL, rr_admit, rr_remove, rr_next, rr_qlen};
-//scheduler RoundRobin = &&rr_publish;
 
 //addmit new thread
 void rr_admit(thread  t){
 	rdyP++;
-	//testing
-	//printf("admit id%d\n", (int)t->tid);
 	if(head == NULL){
 		head = t;
 		t->sched_one = t;
 		t->sched_two = t;
-		last = head;
+		last = t;
 		return;
 	}
-	//testing
-	//printf("last id going into while loop%d\n", (int)last->tid);
 	while(last->sched_one != head){
-		last->sched_one = last;	
+		last = last->sched_one;	
 		}
 		t->sched_one = head;
 		t->sched_two = last;
@@ -45,122 +39,66 @@ int rr_qlen(){
 }
 
 context* rr_next(){	
-	if(start == 0){
-		start++;
-		current = head;	
+	if(head == NULL){
+		current = NULL;
+		start = 0;
+		return NULL;
+	}
+	
+	if(current == NULL || start == 0){
+		start = 1;
+		current = head;
 	}else{
 		current = current->sched_one;
+		if(current == NULL){
+			current = head;
+		}
 	}
 	return current;
 }
 
 void rr_remove(thread t){
-	rdyP--;
+	if(!head || !t){return;}
+
 	context *next = head;
-	context *last;
+	context *last = NULL;
+	
+	if(head == head->sched_one && head == t){
+		head = NULL;
+		last = NULL;
+		current = NULL;
+		rdyP = 0;
+		return;
+	}
 
-	while(next->tid != t->tid){
-		if(next->sched_one->tid == t->tid){
-			last = next;
-			next = next->sched_one->sched_one;
-			last->sched_one = next;
-			next->sched_two = last;
-			break;
+	do{
+		if(next == t){
+
+			if(next == head){
+				head = next->sched_one;
+			}
+
+			next->sched_two->sched_one = next->sched_one;
+			next->sched_one->sched_two = next->sched_two;
+			
+
+			if(current == next){
+				current = next->sched_one;
+			}
+			
+			if(last == next){
+				last = next->sched_two;
+			}
+			rdyP--;
+			return;
 		}
-
-		next = next->sched_one;
-	} 
+		last = next;
+		next = next->sched_one;	
+	}while(next !=head);
+	 
 }
 
 struct scheduler rr_publish = {NULL, NULL, rr_admit, rr_remove, rr_next, rr_qlen};
 scheduler rRobin = &rr_publish;
-
-/* testing
-void roundRobin(int num_cycles){
-	if(head ==NULL){
-		printf("List is empty.\n");
-		return;
-	}
-
-	//context *current = malloc(sizeof(context)); 
-	context *tmp = head;
-	int i;
-	for(i = 0; i < num_cycles; i++){
-		printf("Cycle %d with the id of  %d\n",i+1,(int)tmp->tid);
-		tmp = tmp->sched_one;
-	}
-}*/
-
-/*int main(){
-
-	context *tA;
-	tA = malloc(sizeof(context));
-	tA->tid = 1;
-	tA->stack = NULL;
-	tA->stacksize = 0;
-	tA->state.fxsave=FPU_INIT;
-	tA->status = MKTERMSTAT(LWP_TERM, 0); 
-	tA->lib_one = NULL;
-	tA->lib_two = NULL;
-	tA->sched_one = NULL;
-	tA->sched_two = NULL;
-	tA->exited = NULL;
-
-	
-	thread tB;
-	tB = malloc(sizeof(context));
-	tB->tid = 2;
-	tB->stack = NULL;
-	tB->stacksize = 0;
-	tB->state.fxsave=FPU_INIT;
-	tB->status = MKTERMSTAT(LWP_TERM, 0); 
-	tB->lib_one = NULL;
-	tB->lib_two = NULL;
-	tB->sched_one = NULL;
-	tB->sched_two = NULL;
-	tB->exited = NULL;
-		
-	thread tC;
-	tC = malloc(sizeof(context));
-	tC->tid = 3;
-	tC->stack = NULL;
-	tC->stacksize = 0;
-	tC->state.fxsave=FPU_INIT;
-	tC->status = MKTERMSTAT(LWP_TERM, 0); 
-	tC->lib_one = NULL;
-	tC->lib_two = NULL;
-	tC->sched_one = NULL;
-	tC->sched_two = NULL;
-	tC->exited = NULL;
-
-	thread tD;
-	tD = malloc(sizeof(context));
-	tD->tid = 4;
-	tD->stack = NULL;
-	tD->stacksize = 0;
-	tD->state.fxsave=FPU_INIT;
-	tD->status = MKTERMSTAT(LWP_TERM, 0); 
-	tD->lib_one = NULL;
-	tD->lib_two = NULL;
-	tD->sched_one = NULL;
-	tD->sched_two = NULL;
-	tD->exited = NULL;
-
-	admit(tA);	
-	admit(tB);
-	admit(tC);
-	admit(tD);
-	removeT(tC);
-	printf("Next process id %d\n", (int)next()->tid);
-	printf("Number of ready process %d\n", qlen());
-	printf("Next process id %d\n", (int)next()->tid);
-	printf("Starting round-robin...\n");
-	roundRobin(10);
-
-	printf("Next process id %d\n", (int)next()->tid);
-	return 0;
-}*/
-
-
 
 

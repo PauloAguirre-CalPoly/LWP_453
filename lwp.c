@@ -64,19 +64,60 @@ tid_t lwp_create(lwpfun function, void *argument){
 	return newThread->tid;
 }
 
+
+void lwp_set_scheduler(scheduler sched){
+	scheduler oSch = lwp_sch;
+	lwp_sch = sched;
+
+	context* first = oSch->next();
+	context* threads[1024];
+	int count = 0;
+
+	context* curr = first;
+
+	do{
+		threads[count++] = curr;
+		curr = curr->sched_one;
+	}while(curr != first && curr != NULL && count < 1024);
+	int i;
+	for(i = 0; i < count; i++){
+		context* t = threads[i];
+		printf("thread id%d\n", (int)t->tid);
+		printf("before %d\n", lwp_sch->qlen());
+		oSch->remove(t);
+		printf("after %d\n", lwp_sch->qlen());
+		lwp_sch->admit(t);
+	}
+	
+	
+}
+
+scheduler lwp_get_scheduler(){
+	return lwp_sch;
+}
+
 void testLwp_Create(void *argument){
 	printf("Test thread running with arg = %p\n",argument);
 	}
 
 int main(){
-	tid_t tid = lwp_create(testLwp_Create, (void*)0x1234);
+	/*tid_t tid = lwp_create(testLwp_Create, (void*)0x1234);
 	if(tid == NO_THREAD){
 		printf("lwp_create() failed!\n");
 		return 1;
 	}
 	printf("Thread created successfully with TID %ld\n", (long)tid);
 	printf("testing rRobin qlen: %d\n", (int)lwp_sch->next()->tid);
-	printf("Testing rRobin qlen: %d\n", lwp_sch->qlen());
+	printf("Testing rRobin qlen: %d\n", lwp_sch->qlen());*/
+	lwp_create(testLwp_Create, (void*)0x1234);
+	lwp_create(testLwp_Create, (void*)0x1234);
+	lwp_create(testLwp_Create, (void*)0x1234);
+	scheduler testSch = &rr_publish;
+	lwp_set_scheduler(testSch);
+	printf("checking next in new scheduler%d\n", (int)testSch->next()->tid);
+	printf("checking next in new scheduler%d\n", (int)testSch->next()->tid);
+	printf("checking next in new scheduler%d\n", (int)testSch->next()->tid);
+	
 	return 0;				
 }
 
