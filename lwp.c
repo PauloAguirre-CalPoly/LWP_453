@@ -9,6 +9,14 @@
 #include"rr.c"
 
 #define STACK_SIZE (8 * 1024 * 1024)
+
+extern void rr_admit(thread t);
+extern int rr_qlen();
+extern context* rr_next();
+extern void rr_remove(thread t);
+
+scheduler lwp_sch = &rr_publish;
+
 int threadTid = 1;
 thread head;
 
@@ -51,6 +59,7 @@ tid_t lwp_create(lwpfun function, void *argument){
 	newThread->sched_two = NULL;
 	newThread->exited = NULL;
 
+	lwp_sch->admit(newThread);
 	threadTid++;
 	return newThread->tid;
 }
@@ -66,6 +75,8 @@ int main(){
 		return 1;
 	}
 	printf("Thread created successfully with TID %ld\n", (long)tid);
+	printf("testing rRobin qlen: %d\n", (int)lwp_sch->next()->tid);
+	printf("Testing rRobin qlen: %d\n", lwp_sch->qlen());
 	return 0;				
 }
 

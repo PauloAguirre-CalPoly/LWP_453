@@ -13,10 +13,14 @@ context *last = NULL;
 int rdyP = 0;
 int start = 0;
 
+//struct scheduler rr_publish = {NULL, NULL, rr_admit, rr_remove, rr_next, rr_qlen};
+//scheduler RoundRobin = &&rr_publish;
+
 //addmit new thread
-void admit(thread  t){
+void rr_admit(thread  t){
 	rdyP++;
-	printf("admit id%d\n", (int)t->tid);
+	//testing
+	//printf("admit id%d\n", (int)t->tid);
 	if(head == NULL){
 		head = t;
 		t->sched_one = t;
@@ -24,7 +28,8 @@ void admit(thread  t){
 		last = head;
 		return;
 	}
-	printf("last id going into while loop%d\n", (int)last->tid);
+	//testing
+	//printf("last id going into while loop%d\n", (int)last->tid);
 	while(last->sched_one != head){
 		last->sched_one = last;	
 		}
@@ -35,11 +40,11 @@ void admit(thread  t){
 		last = t;
 }
 
-int qlen(){
+int rr_qlen(){
 	return rdyP;
 }
 
-context* next(){	
+context* rr_next(){	
 	if(start == 0){
 		start++;
 		current = head;	
@@ -49,7 +54,7 @@ context* next(){
 	return current;
 }
 
-void removeT(thread t){
+void rr_remove(thread t){
 	rdyP--;
 	context *next = head;
 	context *last;
@@ -67,6 +72,10 @@ void removeT(thread t){
 	} 
 }
 
+struct scheduler rr_publish = {NULL, NULL, rr_admit, rr_remove, rr_next, rr_qlen};
+scheduler rRobin = &rr_publish;
+
+/* testing
 void roundRobin(int num_cycles){
 	if(head ==NULL){
 		printf("List is empty.\n");
@@ -80,9 +89,9 @@ void roundRobin(int num_cycles){
 		printf("Cycle %d with the id of  %d\n",i+1,(int)tmp->tid);
 		tmp = tmp->sched_one;
 	}
-}
+}*/
 
-int main(){
+/*int main(){
 
 	context *tA;
 	tA = malloc(sizeof(context));
@@ -150,7 +159,7 @@ int main(){
 
 	printf("Next process id %d\n", (int)next()->tid);
 	return 0;
-}
+}*/
 
 
 
