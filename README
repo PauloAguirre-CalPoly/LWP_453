@@ -1,4 +1,35 @@
 Paulo Aguirre
-Paaguirr@calpoly.ed
-Project 2: Scheduler
+Abdullah Tanveer
 
+
+Special Instructions:
+1. To compile the programs, run:
+   make
+
+2. To run the sample programs, use:
+   ./nums        - runs the numbers test program
+   ./snakes      - runs the basic snakes game
+   ./hungry      - runs the hungry snakes variant
+
+
+
+Known Issues:
+
+- Currently, all programs compile successfully, but they crash with a segmentation fault when run. 
+- The crash happens when the LWP (Lightweight Process) scheduler tries to start a new thread. 
+- I believe the issue is related to the thread context setup:
+- In particular, the CPU instruction pointer (RIP) and stack pointer (RSP) are not being set correctly for the new threads.
+
+
+
+What’s Missing:
+
+- Properly initialize the thread stack and registers to ensure each new thread begins execution at `lwp_wrap` with correct arguments.
+- Ensure 16-byte stack alignment for x86-64.
+- Once fixed, the programs should run correctly and switch between threads without crashing.
+
+
+Additional Notes:
+
+- I have successfully compiled all programs and linked the LWP library. 
+- The segfault occurs immediately upon starting the threads, not during compilation.

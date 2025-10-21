@@ -62,23 +62,34 @@ tid_t lwp_create(lwpfun function, void *argument){
 	}
 
 	//top of the stack from high address to low
-	unsigned long *stack_top = (unsigned long *)((char *)newThread->stack + newThread->stacksize);
+	//unsigned long *stack_top = (unsigned long *)((char *)newThread->stack + newThread->stacksize);
 	//return address for lwp_wrap
-	*(--stack_top) = (unsigned long) lwp_exit;
+//	*(--stack_top) = (unsigned long) lwp_exit;
 	//2nd arg to lwp_wrap
-	*(--stack_top) = (unsigned long) argument;
+//	*(--stack_top) = (unsigned long) argument;
 	//1st arg to lwp_wrap
-	*(--stack_top) = (unsigned long) function;
+//	*(--stack_top) = (unsigned long) function;
 
 	//base pointer
-	newThread->state.rbp = 0;
+//	newThread->state.rbp = 0;
 	//first arg
-	newThread->state.rdi = (unsigned long) function;
+//	newThread->state.rdi = (unsigned long) function;
 	//second arg
-	newThread->state.rsi = (unsigned long) argument;
+//	newThread->state.rsi = (unsigned long) argument;
 	//stack pointer
-	newThread->state.rsp = (unsigned long) stack_top;
+//	newThread->state.rsp = (unsigned long) stack_top;
+ 	
+//	newThread->state.rip = (unsigned long) lwp_wrap;
 
+
+	unsigned long *stack_top = (unsigned long *)((char *)newThread->stack + newThread->stacksize);
+	stack_top = (unsigned long *)((uintptr_t)stack_top & ~0xF);
+
+	newThread->state.rsp = (unsigned long) stack_top;  // stack pointer
+	newThread->state.rdi = (unsigned long) function;   // 1st arg to lwp_wrap
+	newThread->state.rsi = (unsigned long) argument;   // 2nd arg to lwp_wrap
+	newThread->state.rbp = 0;
+	//newThread->state.fxsave = FPU_INIT;
 	newThread->state.fxsave = FPU_INIT;
 	newThread->status = MKTERMSTAT(LWP_LIVE, 0);
 	newThread->lib_one = NULL;
