@@ -7,6 +7,7 @@
 #include<sys/resource.h>
 #include"lwp.h"
 #include"rr.c"
+#include<stddef.h>
 
 #define STACK_SIZE (8 * 1024 * 1024)
 
@@ -15,10 +16,18 @@ extern int rr_qlen();
 extern context* rr_next();
 extern void rr_remove(thread t);
 
+static void lwp_wrap(lwpfun fun, void *arg);
 scheduler lwp_sch = &rr_publish;
 
 int threadTid = 1;
 thread head;
+thread runningP;
+
+/*context *newThread(){
+	context* thread;
+	thead = malloc(sizeof(context));
+	thread->
+}*/
 
 size_t stack(){
 	struct rlimit rl;
@@ -43,14 +52,25 @@ tid_t lwp_create(lwpfun function, void *argument){
 		free(newThread);
 		return NO_THREAD;
 	}
+
 	//top of the stack from high address to low
 	unsigned long *stack_top = (unsigned long *)((char *)newThread->stack + newThread->stacksize);
-	//instruction pointer
+	//return address for lwp_wrap
+	*(--stack_top) = (unsigned long) lwp_exit;
+	//2nd arg to lwp_wrap
+	*(--stack_top) = (unsigned long) argument;
+	//1st arg to lwp_wrap
+	*(--stack_top) = (unsigned long) function;
+
+	//base pointer
+	newThread->state.rbp = 0;
+	//first arg
 	newThread->state.rdi = (unsigned long) function;
+	//second arg
+	newThread->state.rsi = (unsigned long) argument;
 	//stack pointer
 	newThread->state.rsp = (unsigned long) stack_top;
-	//first argument
-	newThread->state.rsi = (unsigned long) argument;
+
 	newThread->state.fxsave = FPU_INIT;
 	newThread->status = MKTERMSTAT(LWP_LIVE, 0);
 	newThread->lib_one = NULL;
@@ -67,6 +87,9 @@ tid_t lwp_create(lwpfun function, void *argument){
 
 void lwp_set_scheduler(scheduler sched){
 	scheduler oSch = lwp_sch;
+	if(sched == lwp_sch){
+		return;
+	}
 	lwp_sch = sched;
 
 	context* first = oSch->next();
@@ -96,28 +119,67 @@ scheduler lwp_get_scheduler(){
 	return lwp_sch;
 }
 
-void testLwp_Create(void *argument){
-	printf("Test thread running with arg = %p\n",argument);
-	}
+static void lwp_wrap(lwpfun fun, void *arg){
+	int rval;
+	rval = fun(arg);
+	lwp_exit(rval);
+}
 
-int main(){
-	/*tid_t tid = lwp_create(testLwp_Create, (void*)0x1234);
-	if(tid == NO_THREAD){
-		printf("lwp_create() failed!\n");
-		return 1;
-	}
-	printf("Thread created successfully with TID %ld\n", (long)tid);
-	printf("testing rRobin qlen: %d\n", (int)lwp_sch->next()->tid);
-	printf("Testing rRobin qlen: %d\n", lwp_sch->qlen());*/
-	lwp_create(testLwp_Create, (void*)0x1234);
-	lwp_create(testLwp_Create, (void*)0x1234);
-	lwp_create(testLwp_Create, (void*)0x1234);
-	scheduler testSch = &rr_publish;
-	lwp_set_scheduler(testSch);
-	printf("checking next in new scheduler%d\n", (int)testSch->next()->tid);
-	printf("checking next in new scheduler%d\n", (int)testSch->next()->tid);
-	printf("checking next in new scheduler%d\n", (int)testSch->next()->tid);
+void lwp_start(){
+	thread t;
+	t = malloc(sizeof(context));
+
+	t->tid = threadTid;	
+	t->stack = NULL;	
+	t->stacksize = 0;	
+	t->status = MKTERMSTAT(LWP_LIVE, 0);	
+	t->lib_one = NULL;	
+	t->lib_two = NULL;	
+	t->sched_one = NULL;	
+	t->sched_two = NULL;	
+	t->exited = NULL;
+	t->state.fxsave = FPU_INIT;
 	
-	return 0;				
+	lwp_sch->admit(t);
+	runningP = t;
+	
+	threadTid++;	
+	//lwp_yield();
+}
+
+//void lwp_yield(){
+//	thread t;
+//	t = runningP;
+	
+//}
+
+void lwp_exit(int exitval){
+	//term the curr LWP and yields to which ever 
+	//thread the scheduler chooses.
+	thread t;
+	t = runningP;
+	t->status = MKTERMSTAT(LWP_TERM, exitval);
+	lwp_sch->remove(t);
+	//need yield();
+}
+
+context* tid2thread(tid_t tid){
+	if(!lwp_sch){
+		return NULL;
+	}
+	context* t = lwp_sch->next();
+	if(!t){
+		return NULL;
+	}
+	context* start =t;
+	
+	do{
+		if(t->tid == tid){
+			return t;
+		}
+		t = t->sched_one;
+	}while(t != start && t!= NULL);
+	return NULL;	
+	
 }
 
