@@ -6,8 +6,9 @@
 #include<sys/mman.h>
 #include<sys/resource.h>
 #include"lwp.h"
-#include"rr.c"
+//#include"rr.c"
 #include<stddef.h>
+#include <stdlib.h>
 
 #define STACK_SIZE (8 * 1024 * 1024)
 
@@ -15,13 +16,20 @@ extern void rr_admit(thread t);
 extern int rr_qlen();
 extern context* rr_next();
 extern void rr_remove(thread t);
+extern struct scheduler rr_publish;
 
-static void lwp_wrap(lwpfun fun, void *arg);
+
 scheduler lwp_sch = &rr_publish;
-
 int threadTid = 1;
 thread head;
 thread runningP;
+
+
+static void lwp_wrap(lwpfun fun, void *arg);
+//scheduler lwp_sch = &rr_publish;
+
+
+thread terminated_list = NULL;
 
 /*context *newThread(){
 	context* thread;
@@ -125,27 +133,60 @@ static void lwp_wrap(lwpfun fun, void *arg){
 	lwp_exit(rval);
 }
 
-void lwp_start(){
-	thread t;
-	t = malloc(sizeof(context));
 
-	t->tid = threadTid;	
-	t->stack = NULL;	
-	t->stacksize = 0;	
-	t->status = MKTERMSTAT(LWP_LIVE, 0);	
-	t->lib_one = NULL;	
-	t->lib_two = NULL;	
-	t->sched_one = NULL;	
-	t->sched_two = NULL;	
-	t->exited = NULL;
-	t->state.fxsave = FPU_INIT;
-	
-	lwp_sch->admit(t);
-	runningP = t;
-	
-	threadTid++;	
-	//lwp_yield();
+static void add_to_terminated_list(thread t) {
+    if (t == NULL) {
+        return;
+    }
+    
+    if (terminated_list == NULL) {
+        terminated_list = t;
+        t->exited = NULL;
+    } else {
+        thread curr = terminated_list;
+        while (curr->exited != NULL) {
+            curr = curr->exited;
+        }
+        curr->exited = t;
+        t->exited = NULL;
+    }
 }
+
+static thread dequeue_terminated(void) {
+    thread t;
+    
+    if (terminated_list == NULL) {
+        return NULL;
+    }
+    
+    t = terminated_list;
+    terminated_list = t->exited;
+    t->exited = NULL;
+    
+    return t;
+}
+
+//void lwp_start(){
+//	thread t;
+//	t = malloc(sizeof(context));
+//
+//	t->tid = threadTid;	
+//	t->stack = NULL;	
+//	t->stacksize = 0;	
+//	t->status = MKTERMSTAT(LWP_LIVE, 0);	
+//	t->lib_one = NULL;	
+//	t->lib_two = NULL;	
+//	t->sched_one = NULL;	
+//	t->sched_two = NULL;	
+//	t->exited = NULL;
+//	t->state.fxsave = FPU_INIT;
+	
+//	lwp_sch->admit(t);
+//	runningP = t;
+	
+//	threadTid++;	
+	//lwp_yield();
+//}
 
 //void lwp_yield(){
 //	thread t;
@@ -153,15 +194,124 @@ void lwp_start(){
 	
 //}
 
-void lwp_exit(int exitval){
+
+void lwp_start(void) {
+    thread main_thread;
+    
+    main_thread = malloc(sizeof(context));
+    if (!main_thread) {
+        printf("Failed to allocate memory for the main thread\n");
+        exit(1);
+    }
+    
+
+    main_thread->tid = threadTid++;
+    main_thread->stack = NULL;
+    main_thread->stacksize = 0;
+
+    
+    memset(&main_thread->state, 0, sizeof(rfile));
+    main_thread->state.fxsave = FPU_INIT;
+    main_thread->status = MKTERMSTAT(LWP_LIVE, 0);
+    
+    main_thread->lib_one = NULL;
+    main_thread->lib_two = NULL;
+    main_thread->sched_one = NULL;
+    main_thread->sched_two = NULL;
+    main_thread->exited = NULL;
+    
+    lwp_sch->admit(main_thread);
+    runningP = main_thread;
+    
+    lwp_yield();
+}
+
+//void lwp_exit(int exitval){
 	//term the curr LWP and yields to which ever 
 	//thread the scheduler chooses.
-	thread t;
-	t = runningP;
-	t->status = MKTERMSTAT(LWP_TERM, exitval);
-	lwp_sch->remove(t);
+//	thread t;
+//	t = runningP;
+//	t->status = MKTERMSTAT(LWP_TERM, exitval);
+//	lwp_sch->remove(t);
 	//need yield();
+//}
+
+
+void lwp_exit(int status) {
+    thread current;
+    
+    current = runningP;
+    
+    if (current == NULL) {
+        exit(status);
+    }
+    
+    current->status = MKTERMSTAT(LWP_TERM, status);
+    add_to_terminated_list(current);
+    lwp_sch->remove(current);
+    runningP = NULL;
+    
+    lwp_yield();
 }
+
+
+void lwp_yield(void) {
+    thread old_thread, new_thread;
+    
+    old_thread = runningP;
+    new_thread = lwp_sch->next();
+    
+    if (new_thread == NULL) {
+        exit(0);
+    }
+    
+    runningP = new_thread;
+    
+    if (old_thread != new_thread) {
+        swap_rfiles(&old_thread->state, &new_thread->state);
+    }
+}
+
+
+tid_t lwp_wait(int *status) {
+    thread terminated;
+    tid_t tid;
+    
+    terminated = dequeue_terminated();
+    
+    if (terminated == NULL) {
+        return NO_THREAD;
+    }
+    
+    if (status != NULL) {
+        *status = LWPTERMSTAT(terminated->status);
+    }
+    
+    tid = terminated->tid;
+    
+    if (terminated->stack != NULL) {
+        munmap(terminated->stack, terminated->stacksize);
+    }
+    free(terminated);
+    
+    return tid;
+}
+
+
+tid_t lwp_gettid(void) {
+    if (runningP == NULL) {
+        return NO_THREAD;
+    }
+    return runningP->tid;
+}
+
+
+
+
+
+
+
+
 
 context* tid2thread(tid_t tid){
 	if(!lwp_sch){
@@ -182,4 +332,7 @@ context* tid2thread(tid_t tid){
 	return NULL;	
 	
 }
+
+
+
 
