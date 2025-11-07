@@ -6,7 +6,7 @@
 #include<sys/mman.h>
 #include<sys/resource.h>
 #include"lwp.h"
-//#include"rr.c"
+#include"rr.c"
 #include<stddef.h>
 #include <stdlib.h>
 
@@ -26,16 +26,8 @@ thread runningP;
 
 
 static void lwp_wrap(lwpfun fun, void *arg);
-//scheduler lwp_sch = &rr_publish;
-
 
 thread terminated_list = NULL;
-
-/*context *newThread(){
-	context* thread;
-	thead = malloc(sizeof(context));
-	thread->
-}*/
 
 size_t stack(){
 	struct rlimit rl;
@@ -52,6 +44,11 @@ tid_t lwp_create(lwpfun function, void *argument){
 	context* newThread;
 	
 	newThread = malloc(sizeof(context));
+
+	if(!newThread){
+		perror("malloc\n");
+		return NO_THREAD;
+	}
 	newThread->tid = threadTid;
 	newThread->stacksize = stack();
 	newThread->stack = mmap(NULL, newThread->stacksize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK,  -1, 0);
@@ -61,23 +58,20 @@ tid_t lwp_create(lwpfun function, void *argument){
 		return NO_THREAD;
 	}
 
-	//top of the stack from high address to low
 	unsigned long *stack_top = (unsigned long *)((char *)newThread->stack + newThread->stacksize);
-	//return address for lwp_wrap
-	*(--stack_top) = (unsigned long) lwp_exit;
-	//2nd arg to lwp_wrap
-	*(--stack_top) = (unsigned long) argument;
-	//1st arg to lwp_wrap
-	*(--stack_top) = (unsigned long) function;
+	stack_top = (unsigned long *)((unsigned long)stack_top & ~0xFUL);
+	*(--stack_top) = (unsigned long) 0x12345678;
+	*(--stack_top) = (unsigned long) lwp_wrap;
+	*(--stack_top) = (unsigned long) 0;
+	
 
+	memset(&newThread->state, 0, sizeof(rfile));
 	//base pointer
-	newThread->state.rbp = 0;
+	newThread->state.rbp = (unsigned long) stack_top;
 	//first arg
 	newThread->state.rdi = (unsigned long) function;
 	//second arg
 	newThread->state.rsi = (unsigned long) argument;
-	//stack pointer
-	newThread->state.rsp = (unsigned long) stack_top;
 
 	newThread->state.fxsave = FPU_INIT;
 	newThread->status = MKTERMSTAT(LWP_LIVE, 0);
@@ -88,6 +82,7 @@ tid_t lwp_create(lwpfun function, void *argument){
 	newThread->exited = NULL;
 
 	lwp_sch->admit(newThread);
+	runningP = newThread;
 	threadTid++;
 	return newThread->tid;
 }
@@ -100,12 +95,14 @@ void lwp_set_scheduler(scheduler sched){
 	}
 	lwp_sch = sched;
 
+	if(!oSch || !oSch->next()) return;
+
 	context* first = oSch->next();
 	context* threads[1024];
 	int count = 0;
 
 	context* curr = first;
-
+	
 	do{
 		threads[count++] = curr;
 		curr = curr->sched_one;
@@ -166,34 +163,6 @@ static thread dequeue_terminated(void) {
     return t;
 }
 
-//void lwp_start(){
-//	thread t;
-//	t = malloc(sizeof(context));
-//
-//	t->tid = threadTid;	
-//	t->stack = NULL;	
-//	t->stacksize = 0;	
-//	t->status = MKTERMSTAT(LWP_LIVE, 0);	
-//	t->lib_one = NULL;	
-//	t->lib_two = NULL;	
-//	t->sched_one = NULL;	
-//	t->sched_two = NULL;	
-//	t->exited = NULL;
-//	t->state.fxsave = FPU_INIT;
-	
-//	lwp_sch->admit(t);
-//	runningP = t;
-	
-//	threadTid++;	
-	//lwp_yield();
-//}
-
-//void lwp_yield(){
-//	thread t;
-//	t = runningP;
-	
-//}
-
 
 void lwp_start(void) {
     thread main_thread;
@@ -203,21 +172,23 @@ void lwp_start(void) {
         printf("Failed to allocate memory for the main thread\n");
         exit(1);
     }
-    
 
-    main_thread->tid = threadTid++;
-    main_thread->stack = NULL;
-    main_thread->stacksize = 0;
-
-    
-    memset(&main_thread->state, 0, sizeof(rfile));
-    main_thread->state.fxsave = FPU_INIT;
+    main_thread->tid = threadTid++;    
+   
+	main_thread->stack = NULL;
+	main_thread->stacksize = 0;
+	unsigned long rsp, rbp;
+	asm volatile("mov %%rsp, %0" : "=r"(rsp));
+	asm volatile("mov %%rbp, %0" : "=r"(rbp));
+	main_thread->state.rsp = rsp;
+	main_thread->state.rbp = rbp;
+    main_thread->state.fxsave = FPU_INIT;    
     main_thread->status = MKTERMSTAT(LWP_LIVE, 0);
     
     main_thread->lib_one = NULL;
     main_thread->lib_two = NULL;
-    main_thread->sched_one = NULL;
-    main_thread->sched_two = NULL;
+    main_thread->sched_one = main_thread;
+    main_thread->sched_two = main_thread;
     main_thread->exited = NULL;
     
     lwp_sch->admit(main_thread);
@@ -225,16 +196,6 @@ void lwp_start(void) {
     
     lwp_yield();
 }
-
-//void lwp_exit(int exitval){
-	//term the curr LWP and yields to which ever 
-	//thread the scheduler chooses.
-//	thread t;
-//	t = runningP;
-//	t->status = MKTERMSTAT(LWP_TERM, exitval);
-//	lwp_sch->remove(t);
-	//need yield();
-//}
 
 
 void lwp_exit(int status) {
@@ -267,7 +228,7 @@ void lwp_yield(void) {
     
     runningP = new_thread;
     
-    if (old_thread != new_thread) {
+    if (old_thread != NULL && old_thread !=  new_thread) {
         swap_rfiles(&old_thread->state, &new_thread->state);
     }
 }
@@ -305,14 +266,6 @@ tid_t lwp_gettid(void) {
     return runningP->tid;
 }
 
-
-
-
-
-
-
-
-
 context* tid2thread(tid_t tid){
 	if(!lwp_sch){
 		return NULL;
@@ -332,7 +285,4 @@ context* tid2thread(tid_t tid){
 	return NULL;	
 	
 }
-
-
-
 
